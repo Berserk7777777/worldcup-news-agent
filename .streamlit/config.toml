@@ -1,9 +1,22 @@
 [theme]
-primaryColor = "#0F6B4F"
-backgroundColor = "#FBFAF5"
-secondaryBackgroundColor = "#E9EEE7"
-textColor = "#18352B"
-linkColor = "#0F6B4F"
+base = "light"
+primaryColor = "#1C5A52"
+backgroundColor = "#F4F0E8"
+secondaryBackgroundColor = "#EAE4D8"
+textColor = "#172724"
+linkColor = "#1C5A52"
+borderColor = "#D7D0C4"
 baseRadius = "large"
 buttonRadius = "full"
 showWidgetBorder = true
+showSidebarBorder = false
+baseFontSize = 15
+headingFontWeights = [700, 700, 650, 600, 600, 600]
+chartCategoricalColors = ["#1C5A52", "#C7A96B", "#397B72", "#8B7150", "#B65C4A", "#7D8B79"]
+
+[theme.sidebar]
+backgroundColor = "#0B2F2B"
+secondaryBackgroundColor = "#17443E"
+textColor = "#F4F0E8"
+primaryColor = "#C7A96B"
+borderColor = "#25544D"
