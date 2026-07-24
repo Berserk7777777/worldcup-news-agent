@@ -206,6 +206,50 @@ class SiliconFlowClient:
             raise ModelOutputError("语音识别接口未返回文字")
         return text
 
+    def synthesize_speech(
+        self,
+        text: str,
+        output_path: Path,
+        voice: str = "",
+        speed: float = 1.0,
+    ) -> None:
+        if not text.strip():
+            raise ValueError("语音合成文本不能为空")
+        model = self.settings.tts_model
+        selected_voice = voice or self.settings.tts_voice
+        try:
+            response = requests.post(
+                f"{self.settings.base_url.rstrip('/')}/audio/speech",
+                headers={
+                    "Authorization": f"Bearer {self.settings.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "voice": selected_voice,
+                    "input": text,
+                    "response_format": "mp3",
+                    "speed": min(2.0, max(0.5, float(speed))),
+                },
+                timeout=self.settings.request_timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            raise ModelOutputError(
+                "语音合成失败："
+                + sanitize_error_message(error, self.settings.api_key)
+            ) from error
+        content_type = response.headers.get("Content-Type", "").lower()
+        if "json" in content_type:
+            detail = sanitize_error_message(
+                Exception(response.text[:500]), self.settings.api_key
+            )
+            raise ModelOutputError(f"语音合成未返回音频：{detail}")
+        if not response.content:
+            raise ModelOutputError("语音合成接口返回了空音频")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(response.content)
+
     def analyze_image(
         self,
         image_bytes: bytes,

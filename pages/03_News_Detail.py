@@ -126,6 +126,21 @@ elif user_input.get("news_type") == "AI图片创作":
 else:
     st.warning("这次运行没有生成可展示的新闻正文。")
 
+video = result.get("video") or {}
+video_path = Path(video.get("video_path", "")) if video.get("video_path") else None
+if video_path and not video_path.is_file():
+    candidates = list((run_dir / "video").glob(f"*/{video_path.name}"))
+    video_path = candidates[-1] if candidates else None
+if video_path and video_path.is_file():
+    st.divider()
+    st.subheader("AI 主播新闻视频")
+    st.video(str(video_path))
+    st.caption(
+        f"{video.get('aspect_ratio', '16:9')} · "
+        f"{video.get('duration_seconds', 0):.1f} 秒 · "
+        "AI 配音与自动字幕"
+    )
+
 if result.get("images"):
     with st.expander("图文编排", icon=":material/imagesmode:"):
         st.caption("真实图片应填写来源或摄影者；AI 图片会在成稿中自动标注为“AI生成示意图”。")
@@ -269,3 +284,12 @@ with st.expander("更多下载"):
                     mime=mime,
                     on_click="ignore",
                 )
+        if video_path and video_path.is_file():
+            st.download_button(
+                "下载 AI 新闻视频",
+                video_path.read_bytes(),
+                file_name=f"ai_news_{run_name}.mp4",
+                mime="video/mp4",
+                icon=":material/movie:",
+                on_click="ignore",
+            )

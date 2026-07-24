@@ -20,6 +20,7 @@ from news_images import (
     uses_midjourney_reference,
     uses_source_image,
 )
+from news_video_service import create_news_video, persist_video_result
 from siliconflow_client import SiliconFlowClient
 from ttapi_client import TTAPIMidJourneyClient
 from utils import create_run_directory, sanitize_error_message
@@ -294,6 +295,49 @@ def start_midjourney_action_job(
                 error=sanitize_error_message(
                     error, settings.ttapi_image_api_key
                 ),
+            )
+
+    _EXECUTOR.submit(run)
+    return job_id
+
+
+def start_news_video_job(
+    settings,
+    result: dict,
+    aspect_ratio: str,
+    target_seconds: int,
+    voice: str,
+    speed: float,
+    anchor_bytes: bytes | None = None,
+) -> str:
+    job_id = _create_job("video")
+    result_snapshot = copy.deepcopy(result)
+
+    def run() -> None:
+        try:
+            updated_result = copy.deepcopy(result_snapshot)
+            updated_result.pop("_video_job_id", None)
+            updated_result.pop("_video_error", None)
+            video = create_news_video(
+                settings,
+                updated_result,
+                aspect_ratio=aspect_ratio,
+                target_seconds=target_seconds,
+                voice=voice,
+                speed=speed,
+                anchor_bytes=anchor_bytes,
+                progress_callback=lambda stage, message, state: _append_event(
+                    job_id, stage, message, state
+                ),
+            )
+            updated_result["video"] = video
+            persist_video_result(Path(updated_result["run_dir"]), video)
+            _update(job_id, status="completed", result=updated_result)
+        except Exception as error:
+            _update(
+                job_id,
+                status="failed",
+                error=sanitize_error_message(error, settings.api_key),
             )
 
     _EXECUTOR.submit(run)

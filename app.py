@@ -12,6 +12,7 @@ from background_jobs import (
     start_image_job,
     start_midjourney_action_job,
     start_news_job,
+    start_news_video_job,
 )
 from config import get_missing_configs, load_settings
 from midjourney_service import validate_reference_image_url
@@ -475,6 +476,9 @@ def render_result(result: dict) -> None:
         factual_material = stored_input.factual_material if hasattr(stored_input, "factual_material") else ""
         render_sources(factual_material, result.get("sources"))
 
+        if run_dir:
+            render_news_video(result, run_dir)
+
     if run_dir:
         href = f"./News_Detail?run={quote(run_dir.name)}"
         st.html(f'<a class="result-link" href="{href}">打开完整新闻详情 →</a>')
@@ -482,6 +486,142 @@ def render_result(result: dict) -> None:
     run_id = result.get("monitor_run_id")
     if run_id:
         st.caption(f"[查看本次智能体运行记录](./Agent_Monitor?run_id={run_id})")
+
+
+def _video_file(video: dict, run_dir: Path, field: str) -> Path | None:
+    raw_path = video.get(field, "")
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if path.is_file():
+        return path
+    matches = list((run_dir / "video").glob(f"*/{path.name}"))
+    return matches[-1] if matches else None
+
+
+def render_news_video(result: dict, run_dir: Path) -> None:
+    st.divider()
+    st.markdown("#### AI 主播新闻视频")
+    video_job_id = result.get("_video_job_id")
+    if video_job_id:
+        video_job = get_job(video_job_id)
+        if video_job and video_job["status"] == "running":
+            with st.status("正在生成 AI 新闻视频", expanded=True):
+                events = video_job.get("events", [])
+                if not events:
+                    st.write(":material/progress_activity: 正在准备播报稿")
+                for event in events:
+                    icon = {
+                        "running": ":material/progress_activity:",
+                        "completed": ":material/check_circle:",
+                        "failed": ":material/error:",
+                    }.get(event["state"], ":material/info:")
+                    st.write(f"{icon} {event['message']}")
+            return
+        if video_job and video_job["status"] == "completed":
+            updated = video_job["result"]
+            result.clear()
+            result.update(updated)
+            st.rerun()
+        if video_job:
+            result["_video_error"] = video_job.get("error", "视频生成失败")
+        else:
+            result["_video_error"] = "视频后台任务记录已失效，请重新生成"
+        result.pop("_video_job_id", None)
+
+    if result.get("_video_error"):
+        st.error(result["_video_error"])
+
+    video = result.get("video") or {}
+    video_path = _video_file(video, run_dir, "video_path")
+    if video_path:
+        st.video(str(video_path))
+        st.caption(
+            f"{video.get('aspect_ratio', '16:9')} · "
+            f"{video.get('duration_seconds', 0):.1f} 秒 · "
+            f"{video.get('image_count', 0)} 张新闻图片"
+        )
+        downloads = st.container(horizontal=True)
+        downloads.download_button(
+            "下载 MP4",
+            video_path.read_bytes(),
+            file_name=f"ai_news_{run_dir.name}.mp4",
+            mime="video/mp4",
+            icon=":material/download:",
+            on_click="ignore",
+        )
+        for label, field, filename, mime in [
+            ("下载字幕", "subtitle_path", "subtitles.srt", "text/plain"),
+            ("下载播报稿", "script_path", "broadcast_script.txt", "text/plain"),
+            ("下载配音", "audio_path", "narration.mp3", "audio/mpeg"),
+        ]:
+            path = _video_file(video, run_dir, field)
+            if path:
+                downloads.download_button(
+                    label,
+                    path.read_bytes(),
+                    file_name=filename,
+                    mime=mime,
+                    on_click="ignore",
+                )
+
+    with st.expander(
+        "重新生成视频" if video_path else "生成 AI 新闻视频",
+        icon=":material/movie:",
+    ):
+        st.caption("第一版使用固定新闻版式和 AI 配音；主播图片为静态画中画，不包含口型驱动。")
+        form_key = f"news-video-{run_dir.name}"
+        with st.form(form_key):
+            row = st.container(horizontal=True)
+            aspect_ratio = row.segmented_control(
+                "画面比例",
+                ["16:9", "9:16"],
+                default="16:9",
+                key=f"video-aspect-{run_dir.name}",
+            )
+            duration_label = row.segmented_control(
+                "播报时长",
+                ["30秒", "60秒", "完整"],
+                default="60秒",
+                key=f"video-duration-{run_dir.name}",
+            )
+            speed = st.slider(
+                "语速",
+                min_value=0.75,
+                max_value=1.25,
+                value=1.0,
+                step=0.05,
+                key=f"video-speed-{run_dir.name}",
+            )
+            voice = st.text_input(
+                "TTS 声音 ID",
+                value=settings.tts_voice,
+                key=f"video-voice-{run_dir.name}",
+            )
+            anchor = st.file_uploader(
+                "固定主播图片（可选）",
+                type=["jpg", "jpeg", "png", "webp"],
+                key=f"video-anchor-{run_dir.name}",
+                help="上传后将作为静态主播画中画；不上传则使用纯新闻演播室版式。",
+            )
+            submitted = st.form_submit_button(
+                "生成视频",
+                type="primary",
+                icon=":material/movie_creation:",
+            )
+        if submitted:
+            duration = {"30秒": 30, "60秒": 60, "完整": 0}[duration_label]
+            result["_video_job_id"] = start_news_video_job(
+                settings,
+                result,
+                aspect_ratio or "16:9",
+                duration,
+                voice.strip(),
+                float(speed),
+                anchor.getvalue() if anchor else None,
+            )
+            result.pop("_video_error", None)
+            st.rerun()
 
 
 def render_image_result(result: dict) -> None:
@@ -586,6 +726,9 @@ def has_running_job(mode: str | None = None) -> bool:
         nested_result = message.get("result") or message.get("image_result") or {}
         action_job_id = nested_result.get("_midjourney_action_job_id")
         if action_job_id and (get_job(action_job_id) or {}).get("status") == "running":
+            return True
+        video_job_id = nested_result.get("_video_job_id")
+        if video_job_id and (get_job(video_job_id) or {}).get("status") == "running":
             return True
     return False
 
@@ -693,6 +836,7 @@ with st.sidebar:
             ("图片生成", settings.image_backend_label),
             ("图片理解", settings.vision_model),
             ("语音识别", settings.asr_model),
+            ("语音合成", settings.tts_model),
         ]:
             st.write(f"{label}：{model or '未配置'}")
 

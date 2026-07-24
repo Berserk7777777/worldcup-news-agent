@@ -29,6 +29,8 @@ class Settings:
     llm_enable_thinking: bool = False
     vision_model: str = "Qwen/Qwen3-VL-32B-Instruct"
     asr_model: str = "FunAudioLLM/SenseVoiceSmall"
+    tts_model: str = "FunAudioLLM/CosyVoice2-0.5B"
+    tts_voice: str = "FunAudioLLM/CosyVoice2-0.5B:alex"
     embedding_model: str = "BAAI/bge-m3"
     image_size: str = "1024x1024"
     request_timeout: int = 120
@@ -93,6 +95,10 @@ def load_settings() -> Settings:
         llm_enable_thinking=_env_bool("SILICONFLOW_ENABLE_THINKING", False),
         vision_model=os.getenv("VISION_MODEL", "Qwen/Qwen3-VL-32B-Instruct"),
         asr_model=os.getenv("ASR_MODEL", "FunAudioLLM/SenseVoiceSmall"),
+        tts_model=os.getenv("TTS_MODEL", "FunAudioLLM/CosyVoice2-0.5B"),
+        tts_voice=os.getenv(
+            "TTS_VOICE", "FunAudioLLM/CosyVoice2-0.5B:alex"
+        ),
         embedding_model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
         image_size=os.getenv("IMAGE_SIZE", "1024x1024"),
         request_timeout=timeout,

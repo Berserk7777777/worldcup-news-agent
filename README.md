@@ -1,13 +1,13 @@
 # 2026世界杯新闻创作智能体
 
-一个对话式 Streamlit 新闻助手。用户可以通过文字、语音或参考图片描述新闻需求，系统先从本地世界杯知识库混合检索可信资料，必要时实时刷新白名单页面，再由三个文本模型依次完成策划、写作和独立审校，图像模型根据终审提示词生成 1—2 张宣传图。生成结果直接显示在对话中，点击新闻图片可进入独立详情页。
+一个对话式 Streamlit 新闻助手。用户可以通过文字、语音或参考图片描述新闻需求，系统先从本地世界杯知识库混合检索可信资料，必要时实时刷新白名单页面，再由三个文本模型依次完成策划、写作和独立审校，图像模型根据终审提示词生成 1—2 张宣传图。新闻成稿后还可生成带 AI 配音、同步字幕和新闻图片的 MP4 播报视频。
 
 ## RAG 与新闻流程
 
 ```text
 +-----------+   +----------+   +----------+   +----------+   +----------+
 | 混合检索  |-->| 新闻策划 |-->| 新闻写作 |-->| 独立审校 |-->| 图片生成 |
-| FTS+向量  |   | PLANNER  |   | WRITER   |   | REVIEWER |   | IMAGE    |
+| FTS+向量  |   | PLANNER  |   | WRITER   |   | REVIEWER |   | IMAGE/VIDEO |
 +-----------+   +----------+   +----------+   +----------+   +----------+
 ```
 
@@ -20,6 +20,7 @@ worldcup_news_agent/
 ├── knowledge_base.py         # 抓取、SQLite、FTS5 和向量检索
 ├── rag_sources.py            # 中英文可信来源白名单
 ├── document_export.py        # 带图片的 Word 和 PDF 导出
+├── news_video_service.py     # 播报稿、TTS、字幕与 MP4 合成
 ├── config.py                 # 环境变量配置
 ├── schemas.py                # 数据结构
 ├── prompts.py                # 三阶段提示词
@@ -72,6 +73,8 @@ IMAGE_MODEL=当前可用的图像模型ID
 CHAT_MODEL=当前可用的快速对话模型ID
 VISION_MODEL=当前可用的视觉理解模型ID
 ASR_MODEL=当前可用的语音识别模型ID
+TTS_MODEL=FunAudioLLM/CosyVoice2-0.5B
+TTS_VOICE=FunAudioLLM/CosyVoice2-0.5B:alex
 EMBEDDING_MODEL=BAAI/bge-m3
 IMAGE_SIZE=1024x1024
 REQUEST_TIMEOUT=120
@@ -120,6 +123,19 @@ TTAPI_GET_U_IMAGES=false
 
 新闻详情页支持混合编排真实图片和 AI 图片，可设置封面、导语后、正文第 2 段后或文末图片区，并下载使用同一编排的 PDF、Word；页面也保留纯文本、JSON 和 Markdown 创作报告下载。
 
+### AI 主播新闻视频
+
+终稿生成后，对话结果会显示“AI 主播新闻视频”区域：
+
+1. 选择 `16:9` 横屏或 `9:16` 竖屏。
+2. 选择 30 秒、60 秒或完整播报。
+3. 调整 TTS 语速和声音 ID。
+4. 可选上传一张固定主播图片，作为静态画中画。
+5. 点击“生成视频”，等待播报稿、AI 配音、SRT 字幕和 MP4 合成完成。
+6. 在线预览，并分别下载 MP4、配音、字幕和播报稿。
+
+第一版使用固定新闻版式，不包含口型驱动。视频只采用新闻详情页中当前标记为“纳入图文稿”的真实图片和 AI 图片；真实图片显示来源，AI 图片显示“AI生成示意图”。后续接入数字人口型 API 时，可复用同一播报稿、音频和字幕产物。
+
 ## 专业新闻写作 Skill
 
 项目内置 `.agents/skills/news-writing/SKILL.md`。新闻策划、初稿撰写和独立审校三个文本阶段都会自动加载该 skill，并继续使用 `.env` 中现有的 `PLANNER_MODEL`、`WRITER_MODEL` 和 `REVIEWER_MODEL` API 配置。
@@ -152,6 +168,10 @@ outputs/YYYYMMDD_HHMMSS/
 ├── result.json
 ├── final_article.txt
 ├── creation_report.md
+├── video/<任务ID>/news_video.mp4
+├── video/<任务ID>/narration.mp3
+├── video/<任务ID>/subtitles.srt
+├── video/<任务ID>/broadcast_script.txt
 ├── source_image_1.png      # 上传的真实新闻资料图片
 ├── image_1.png
 └── image_2.png             # 请求两张且成功时

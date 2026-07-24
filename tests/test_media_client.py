@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -42,6 +43,26 @@ class MediaClientTests(unittest.TestCase):
         request = self.client.client.chat.completions.create.call_args.kwargs
         image_url = request["messages"][1]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/png;base64,"))
+
+    @patch("siliconflow_client.requests.post")
+    def test_synthesize_speech_writes_audio(self, post):
+        self.client.settings.tts_model = "tts-model"
+        self.client.settings.tts_voice = "tts-model:voice"
+        response = post.return_value
+        response.content = b"mp3-audio"
+        response.headers = {"Content-Type": "audio/mpeg"}
+        with patch("pathlib.Path.write_bytes") as write_bytes:
+            self.client.synthesize_speech(
+                "新闻播报",
+                Path("speech.mp3"),
+                speed=1.1,
+            )
+
+        request = post.call_args.kwargs
+        self.assertEqual(request["json"]["model"], "tts-model")
+        self.assertEqual(request["json"]["voice"], "tts-model:voice")
+        self.assertEqual(request["json"]["response_format"], "mp3")
+        write_bytes.assert_called_once_with(b"mp3-audio")
 
     def test_stream_chat_yields_content_chunks(self):
         self.client.client = MagicMock()
