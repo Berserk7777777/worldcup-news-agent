@@ -308,7 +308,9 @@ def start_news_video_job(
     target_seconds: int,
     voice: str,
     speed: float,
-    anchor_bytes: bytes | None = None,
+    visual_mode: str = "newsroom",
+    veo_model: str = "veo-3.1-fast",
+    veo_clip_count: int = 1,
 ) -> str:
     job_id = _create_job("video")
     result_snapshot = copy.deepcopy(result)
@@ -325,7 +327,9 @@ def start_news_video_job(
                 target_seconds=target_seconds,
                 voice=voice,
                 speed=speed,
-                anchor_bytes=anchor_bytes,
+                visual_mode=visual_mode,
+                veo_model=veo_model,
+                veo_clip_count=veo_clip_count,
                 progress_callback=lambda stage, message, state: _append_event(
                     job_id, stage, message, state
                 ),

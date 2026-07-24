@@ -25,6 +25,12 @@ class Settings:
     ttapi_request_timeout_seconds: float = 30.0
     ttapi_poll_interval_seconds: float = 5.0
     ttapi_poll_timeout_seconds: float = 300.0
+    ttapi_video_api_key: str = ""
+    ttapi_video_api_key_header: str = "TT-API-KEY"
+    ttapi_video_base_url: str = "https://api.ttapi.org"
+    ttapi_video_generate_path: str = "/gemini/video/generations"
+    ttapi_video_fetch_path: str = "/gemini/video/fetch"
+    ttapi_video_poll_timeout_seconds: float = 900.0
     chat_model: str = "Qwen/Qwen3.5-9B"
     llm_enable_thinking: bool = False
     vision_model: str = "Qwen/Qwen3-VL-32B-Instruct"
@@ -40,6 +46,10 @@ class Settings:
         if self.image_provider == "ttapi":
             return "MidJourney via TTAPI"
         return self.image_model
+
+    @property
+    def veo_available(self) -> bool:
+        return bool(self.ttapi_video_api_key.strip())
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -91,6 +101,23 @@ def load_settings() -> Settings:
         ),
         ttapi_poll_interval_seconds=_env_float("TTAPI_POLL_INTERVAL_SECONDS", 5),
         ttapi_poll_timeout_seconds=_env_float("TTAPI_POLL_TIMEOUT_SECONDS", 300),
+        ttapi_video_api_key=os.getenv("TTAPI_VIDEO_API_KEY")
+        or os.getenv("TTAPI_IMAGE_API_KEY", ""),
+        ttapi_video_api_key_header=os.getenv(
+            "TTAPI_VIDEO_API_KEY_HEADER", "TT-API-KEY"
+        ),
+        ttapi_video_base_url=os.getenv(
+            "TTAPI_VIDEO_BASE_URL", "https://api.ttapi.org"
+        ).rstrip("/"),
+        ttapi_video_generate_path=os.getenv(
+            "TTAPI_VIDEO_GENERATE_PATH", "/gemini/video/generations"
+        ),
+        ttapi_video_fetch_path=os.getenv(
+            "TTAPI_VIDEO_FETCH_PATH", "/gemini/video/fetch"
+        ),
+        ttapi_video_poll_timeout_seconds=_env_float(
+            "TTAPI_VIDEO_POLL_TIMEOUT_SECONDS", 900
+        ),
         chat_model=os.getenv("CHAT_MODEL", "Qwen/Qwen3.5-9B"),
         llm_enable_thinking=_env_bool("SILICONFLOW_ENABLE_THINKING", False),
         vision_model=os.getenv("VISION_MODEL", "Qwen/Qwen3-VL-32B-Instruct"),

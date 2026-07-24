@@ -501,7 +501,7 @@ def _video_file(video: dict, run_dir: Path, field: str) -> Path | None:
 
 def render_news_video(result: dict, run_dir: Path) -> None:
     st.divider()
-    st.markdown("#### AI 主播新闻视频")
+    st.markdown("#### AI 新闻视频播报")
     video_job_id = result.get("_video_job_id")
     if video_job_id:
         video_job = get_job(video_job_id)
@@ -539,8 +539,11 @@ def render_news_video(result: dict, run_dir: Path) -> None:
         st.caption(
             f"{video.get('aspect_ratio', '16:9')} · "
             f"{video.get('duration_seconds', 0):.1f} 秒 · "
-            f"{video.get('image_count', 0)} 张新闻图片"
+            f"{video.get('image_count', 0)} 张新闻图片 · "
+            f"{'Veo 比赛演绎' if video.get('visual_mode') == 'veo' else '新闻版式'}"
         )
+        if video.get("veo_error"):
+            st.warning(f"Veo 镜头未能生成，已使用新闻版式完成播报：{video['veo_error']}")
         downloads = st.container(horizontal=True)
         downloads.download_button(
             "下载 MP4",
@@ -569,7 +572,7 @@ def render_news_video(result: dict, run_dir: Path) -> None:
         "重新生成视频" if video_path else "生成 AI 新闻视频",
         icon=":material/movie:",
     ):
-        st.caption("第一版使用固定新闻版式和 AI 配音；主播图片为静态画中画，不包含口型驱动。")
+        st.caption("使用 AI 配音和同步字幕。Veo 比赛镜头为 AI 生成赛事情景演绎，不代表真实比赛录像。")
         form_key = f"news-video-{run_dir.name}"
         with st.form(form_key):
             row = st.container(horizontal=True)
@@ -598,12 +601,31 @@ def render_news_video(result: dict, run_dir: Path) -> None:
                 value=settings.tts_voice,
                 key=f"video-voice-{run_dir.name}",
             )
-            anchor = st.file_uploader(
-                "固定主播图片（可选）",
-                type=["jpg", "jpeg", "png", "webp"],
-                key=f"video-anchor-{run_dir.name}",
-                help="上传后将作为静态主播画中画；不上传则使用纯新闻演播室版式。",
+            visual_options = ["新闻版式"]
+            if settings.veo_available:
+                visual_options.insert(0, "Veo 比赛演绎")
+            visual_mode = st.segmented_control(
+                "画面来源",
+                visual_options,
+                default=visual_options[0],
+                key=f"video-visual-{run_dir.name}",
+                help="Veo 每段生成 8 秒比赛演绎镜头，并自动与播报音频和字幕合成。",
             )
+            veo_model = "veo-3.1-fast"
+            veo_clip_count = 1
+            if visual_mode == "Veo 比赛演绎":
+                veo_row = st.container(horizontal=True)
+                veo_model = veo_row.selectbox(
+                    "Veo 模型",
+                    ["veo-3.1-fast", "veo-3.1-quality", "veo-3.1-lite"],
+                    key=f"veo-model-{run_dir.name}",
+                )
+                veo_clip_count = veo_row.segmented_control(
+                    "比赛镜头数",
+                    [1, 2, 3],
+                    default=1,
+                    key=f"veo-clips-{run_dir.name}",
+                )
             submitted = st.form_submit_button(
                 "生成视频",
                 type="primary",
@@ -618,7 +640,9 @@ def render_news_video(result: dict, run_dir: Path) -> None:
                 duration,
                 voice.strip(),
                 float(speed),
-                anchor.getvalue() if anchor else None,
+                "veo" if visual_mode == "Veo 比赛演绎" else "newsroom",
+                veo_model,
+                int(veo_clip_count or 1),
             )
             result.pop("_video_error", None)
             st.rerun()

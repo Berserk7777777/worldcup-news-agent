@@ -6,7 +6,9 @@ from pathlib import Path
 from PIL import Image
 
 from news_video_service import (
+    _run_ffmpeg,
     compose_video,
+    compose_veo_video,
     render_news_frame,
     split_broadcast_script,
     subtitle_entries,
@@ -86,6 +88,33 @@ class NewsVideoTests(unittest.TestCase):
                 [frame_path],
                 audio_path,
                 output_path,
+            )
+
+            self.assertGreater(output_path.stat().st_size, 1000)
+
+    def test_ffmpeg_composes_veo_broll_with_subtitles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            clip_path = root / "clip.mp4"
+            _run_ffmpeg(
+                [
+                    "-y", "-f", "lavfi", "-i", "color=c=#173b30:s=320x180:d=0.2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_path.name,
+                ],
+                root,
+            )
+            audio_path = root / "audio.wav"
+            with wave.open(str(audio_path), "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(8000)
+                audio.writeframes(b"\x00\x00" * 8000)
+            subtitle_path = root / "subtitles.srt"
+            write_srt(subtitle_entries("Veo match reenactment", 1.0), subtitle_path)
+            output_path = root / "veo_video.mp4"
+
+            compose_veo_video(
+                root, [clip_path], audio_path, subtitle_path, output_path, (320, 180), 1.0
             )
 
             self.assertGreater(output_path.stat().st_size, 1000)
