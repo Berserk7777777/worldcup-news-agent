@@ -1,0 +1,4 @@
+interface:
+  display_name: "专业新闻写作"
+  short_description: "将用户指令和事实材料转化为可核查、可配图的专业中文新闻稿"
+  default_prompt: "Use $news-writing to turn the supplied facts into a professional Chinese news article."

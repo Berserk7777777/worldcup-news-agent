@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#0F6B4F"
+backgroundColor = "#FBFAF5"
+secondaryBackgroundColor = "#E9EEE7"
+textColor = "#18352B"
+linkColor = "#0F6B4F"
+baseRadius = "large"
+buttonRadius = "full"
+showWidgetBorder = true

@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+outputs/*
+!outputs/.gitkeep
+.venv*/
+venv*/
+.runlogs/
+tmp/
+*.log
+.idea/
+.vscode/
+.DS_Store
+data/agent_traces.db*
+data/worldcup_knowledge.db*
