@@ -376,7 +376,9 @@ def compose_veo_video(
     )
     subtitle_filter = (
         "subtitles=subtitles.srt:charenc=UTF-8:"
-        "force_style='FontName=Microsoft YaHei,FontSize=24,Alignment=2,MarginV=30,Outline=2'"
+        "force_style='FontName=Microsoft YaHei,FontSize=24,Alignment=2,MarginV=30,Outline=2',"
+        "drawtext=text='AI GENERATED MATCH REENACTMENT':x=20:y=20:fontsize=18:"
+        "fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=8"
     )
     _run_ffmpeg(
         [
