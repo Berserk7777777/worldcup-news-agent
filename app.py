@@ -1,6 +1,8 @@
 import base64
 import html
 import json
+from datetime import date
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.parse import quote
 
@@ -23,151 +25,24 @@ from news_images import (
     uses_midjourney_reference,
     uses_source_image,
 )
+from official_feed import load_official_headlines
 from schemas import UserInput
+from ui import (
+    apply_newsroom_style,
+    render_brand,
+    render_sidebar_user,
+    render_topbar,
+)
 from utils import extract_urls, requested_image_count, should_start_image_only_job
 
 
 st.set_page_config(
     page_title="世界杯新闻助手",
     page_icon=":material/sports_soccer:",
-    layout="centered",
+    layout="wide",
 )
 
-st.markdown(
-    """
-<style>
-:root {
-  --ink: #18352b;
-  --muted: #68776f;
-  --pitch: #0f6b4f;
-  --lime: #d8e862;
-  --paper: #fbfaf5;
-  --line: rgba(24, 53, 43, 0.14);
-}
-.stApp {
-  background:
-    radial-gradient(circle at 12% 0%, rgba(216, 232, 98, .20), transparent 28rem),
-    radial-gradient(circle at 92% 15%, rgba(15, 107, 79, .12), transparent 34rem),
-    var(--paper);
-}
-.block-container {
-  max-width: 860px;
-  padding-top: 2rem;
-  padding-bottom: 8rem;
-}
-h1, h2, h3 {
-  color: var(--ink);
-  font-family: Georgia, "Noto Serif SC", serif;
-  letter-spacing: -.025em;
-}
-.hero {
-  min-height: 310px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 2.5rem 0 1rem;
-}
-.hero-kicker {
-  color: var(--pitch);
-  font-size: .82rem;
-  font-weight: 700;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-}
-.hero h1 {
-  margin: .65rem 0 .4rem;
-  font-size: clamp(2.2rem, 7vw, 4.4rem);
-  line-height: 1.02;
-}
-.hero p {
-  color: var(--muted);
-  font-size: 1.05rem;
-  max-width: 35rem;
-}
-.result-cover {
-  display: block;
-  overflow: hidden;
-  border-radius: 22px;
-  border: 1px solid var(--line);
-  box-shadow: 0 16px 44px rgba(24, 53, 43, .13);
-  margin: .7rem 0 1rem;
-}
-.result-cover img {
-  display: block;
-  width: 100%;
-  max-height: 430px;
-  object-fit: cover;
-  transition: transform .35s ease;
-}
-.result-cover:hover img { transform: scale(1.018); }
-.result-link {
-  display: inline-block;
-  color: var(--pitch);
-  font-weight: 700;
-  text-decoration: none;
-  margin: .35rem 0 .8rem;
-}
-.result-link:hover { text-decoration: underline; }
-.mode-notice {
-  width: fit-content;
-  margin: .7rem auto;
-  padding: .35rem .8rem;
-  border-radius: 999px;
-  background: rgba(15, 107, 79, .08);
-  color: var(--muted);
-  font-size: .82rem;
-}
-[data-testid="stChatMessage"] {
-  width: fit-content;
-  max-width: 92%;
-  border: 0;
-  background: transparent;
-  padding: .35rem 0;
-  box-shadow: none;
-}
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  margin-left: auto;
-  padding: .75rem 1rem;
-  border-radius: 22px 22px 6px 22px;
-  background: #eaf1ff;
-}
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
-  margin-right: auto;
-}
-[data-testid="stChatMessageAvatarUser"] {
-  display: none;
-}
-[data-testid="stChatMessageContent"] {
-  min-width: 0;
-}
-[data-testid="stChatInput"] {
-  border-color: rgba(15, 107, 79, .28);
-  box-shadow: 0 12px 34px rgba(24, 53, 43, .11);
-}
-[data-testid="stSidebar"] {
-  background: #173b30;
-}
-[data-testid="stSidebar"] * {
-  color: #f4f1e7;
-}
-[data-testid="stSidebarNav"] { display: none; }
-[data-testid="stSidebar"] .stButton button {
-  background: var(--lime);
-  color: #173b30;
-  border: 0;
-}
-[data-testid="stSidebar"] .stButton button * { color: #173b30; }
-[data-testid="stSidebar"] a:hover {
-  color: var(--lime);
-}
-@media (max-width: 700px) {
-  .block-container { padding-top: 1rem; }
-  .hero { min-height: 260px; padding-top: 1rem; }
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
+apply_newsroom_style()
 
 
 APP_MODES = ["对话", "新闻创作"]
@@ -230,9 +105,20 @@ def reset_chat() -> None:
     st.session_state.news_start_index = 0
 
 
+def activate_mode(mode: str) -> None:
+    st.session_state.app_mode = mode
+    st.session_state.previous_app_mode = mode
+
+
 def announce_mode_change() -> None:
-    previous = st.session_state.previous_app_mode
-    current = st.session_state.app_mode
+    previous = st.session_state.get("previous_app_mode")
+    current = st.session_state.get("app_mode")
+    if current not in APP_MODES:
+        st.session_state.app_mode = previous if previous in APP_MODES else APP_MODES[0]
+        return
+    if previous not in APP_MODES:
+        st.session_state.previous_app_mode = current
+        return
     if previous == current:
         return
     continuing = any(
@@ -242,6 +128,9 @@ def announce_mode_change() -> None:
         for item in st.session_state.messages
     )
     suffix = "，原任务将继续在后台运行" if continuing else ""
+    st.session_state.messages = [
+        item for item in st.session_state.messages if not item.get("notice")
+    ]
     st.session_state.messages.append(
         {
             "role": "assistant",
@@ -273,6 +162,117 @@ def recent_runs(limit: int = 8) -> list[dict]:
         if len(records) >= limit:
             break
     return records
+
+
+def render_home_dashboard(history: list[dict]) -> None:
+    st.html(
+        '<div class="news-section-title"><strong>快捷工作台</strong>'
+        "<span>选择一个任务立即开始</span></div>"
+    )
+    cards = st.columns(3)
+    quick_actions = [
+        ("match", "◎", "赛事档案", "查看官方赛果与历史资料", "打开赛事档案"),
+        ("news", "✎", "新闻创作", "生成快讯、赛后报道与专题稿", "开始创作"),
+        ("source", "▥", "分析参考资料", "管理可信来源与赛事资料", "打开知识库"),
+    ]
+    for column, (key, icon, title, copy, label) in zip(cards, quick_actions):
+        with column.container(border=True, key=f"quick_{key}"):
+            st.html(
+                f'<div class="quick-icon">{icon}</div>'
+                f'<div class="quick-title">{title}</div>'
+                f'<div class="quick-copy">{copy}</div>'
+            )
+            if key == "match":
+                if st.button(label, key="open_match_center", width="stretch"):
+                    st.switch_page("pages/04_Match_Center.py")
+            elif key == "source":
+                if st.button(label, key="open_knowledge_base", width="stretch"):
+                    st.switch_page("pages/01_Knowledge_Base.py")
+            else:
+                st.button(
+                    label,
+                    key=f"start_{key}",
+                    width="stretch",
+                    on_click=activate_mode,
+                    args=("新闻创作",),
+                )
+
+    hot_news, recent_work = st.columns([3, 2], gap="large")
+    with hot_news:
+        st.html(
+            '<div class="news-section-title"><strong>官方动态</strong>'
+            "<span>FIFA 官网 · 15 分钟缓存</span></div>"
+        )
+        feed_mode = st.segmented_control(
+            "资料时间",
+            ["最新动态", "历史回看"],
+            default="最新动态",
+            key="home_feed_mode",
+            label_visibility="collapsed",
+        )
+        before = ""
+        if feed_mode == "历史回看":
+            selected_date = st.date_input(
+                "查看该日期及之前的资料",
+                value=date(2026, 7, 19),
+                min_value=date(2026, 6, 11),
+                max_value=date.today(),
+                key="home_archive_date",
+            )
+            before = selected_date.isoformat()
+        if st.button(
+            "刷新官方动态",
+            icon=":material/refresh:",
+            key="refresh_official_feed",
+        ):
+            load_official_headlines.clear()
+            st.toast("正在重新同步 FIFA 官方资料")
+            st.rerun()
+
+        with st.spinner("正在同步 FIFA 官方资料", show_time=True):
+            feed = load_official_headlines(before=before, limit=5)
+        st.caption(
+            f"数据模式：{feed['mode']}　·　获取时间：{feed['retrieved_at']}"
+        )
+        if not feed["items"]:
+            st.info("暂无可展示资料。可先在知识库页面执行一次更新。")
+        for index, item in enumerate(feed["items"]):
+            with st.container(border=True, key=f"official_story_{index}"):
+                story, action = st.columns([5, 1], vertical_alignment="center")
+                story.markdown(f"**{item['title']}**")
+                story.caption(
+                    f"{item['source_name']}　·　"
+                    f"{item.get('published_at') or '未标注发布日期'}"
+                )
+                action.link_button(
+                    "原文",
+                    item["url"],
+                    icon=":material/open_in_new:",
+                    width="stretch",
+                )
+    with recent_work:
+        st.html(
+            '<div class="news-section-title"><strong>最近工作</strong>'
+            "<span>自动保存</span></div>"
+        )
+        with st.container(border=True):
+            if history:
+                rows = []
+                for item in history[:4]:
+                    href = f"./News_Detail?run={quote(item['run'])}"
+                    rows.append(
+                        '<div class="history-row">'
+                        f'<a href="{href}">{html.escape(item["title"][:34])}</a>'
+                        "<span>已完成　›</span></div>"
+                    )
+                st.html("".join(rows))
+            else:
+                st.caption("完成第一篇新闻后，工作记录会显示在这里。")
+                st.page_link(
+                    "pages/05_History.py",
+                    label="查看历史记录",
+                    icon=":material/history:",
+                )
 
 
 def image_path_for(item, run_dir: Path | None = None) -> Path | None:
@@ -800,32 +800,64 @@ def validate_input(user_input: UserInput, settings) -> list[str]:
 settings = load_settings()
 
 with st.sidebar:
-    st.markdown("## 世界杯新闻助手")
+    render_brand()
     st.button(
-        "新建对话",
-        icon=":material/add_comment:",
+        "新建工作",
+        icon=":material/add:",
         on_click=reset_chat,
+        type="primary",
         width="stretch",
     )
-    st.markdown("### 历史新闻")
+    st.page_link("app.py", label="首页", icon=":material/home:")
+    st.button(
+        "AI 对话",
+        icon=":material/chat:",
+        key="sidebar_chat",
+        on_click=activate_mode,
+        args=("对话",),
+        width="stretch",
+    )
+    st.button(
+        "新闻创作",
+        icon=":material/edit_note:",
+        key="sidebar_news",
+        on_click=activate_mode,
+        args=("新闻创作",),
+        width="stretch",
+    )
+    st.page_link(
+        "pages/04_Match_Center.py",
+        label="赛事档案",
+        icon=":material/sports_soccer:",
+    )
+    st.markdown("#### 最近记录")
     history = recent_runs()
     if history:
-        for item in history:
+        for item in history[:3]:
             title = html.escape(item["title"][:28])
             href = f"./News_Detail?run={quote(item['run'])}"
             st.html(f'<a href="{href}" style="display:block;margin:.65rem 0;text-decoration:none">{title}</a>')
     else:
         st.caption("还没有生成过新闻")
-    st.divider()
+    st.page_link(
+        "pages/05_History.py",
+        label="历史记录",
+        icon=":material/history:",
+    )
     st.page_link(
         "pages/01_Knowledge_Base.py",
-        label="知识库管理",
+        label="知识库",
         icon=":material/database:",
     )
     st.page_link(
         "pages/02_Agent_Monitor.py",
         label="运行监控",
         icon=":material/monitoring:",
+    )
+    st.page_link(
+        "pages/06_Settings.py",
+        label="设置",
+        icon=":material/settings:",
     )
     with st.expander("模型状态"):
         for label, model in [
@@ -839,21 +871,43 @@ with st.sidebar:
             ("语音合成", settings.tts_model),
         ]:
             st.write(f"{label}：{model or '未配置'}")
+    render_sidebar_user()
 
 has_conversation = any(not item.get("notice") for item in st.session_state.messages)
+render_topbar("编辑部", configured=not get_missing_configs(settings))
 
 if not has_conversation:
-    st.html(
-        """
-<section class="hero">
-  <div class="hero-kicker">2026 World Cup newsroom</div>
-  <h1>你好，我是<br>世界杯新闻助手</h1>
-  <p>可以聊世界杯和日常问题，也可以让我创作新闻。支持上传参考图片或直接录音，资料不足时我会继续询问。</p>
+    hero, match = st.columns([1.15, 1], gap="large", vertical_alignment="center")
+    with hero:
+        st.html(
+            """
+<section class="news-hero fade-in">
+  <div class="news-kicker">2026 World Cup AI newsroom</div>
+  <h1>连接实时信息与历史档案，<br>生成<em>更准确</em>的新闻</h1>
+  <p>同步官方动态，回看世界杯历史资料，生成比赛快讯与专业报道。上传事实材料、参考图片或直接录音，AI 编辑部会完成策划、写作与独立审校。</p>
 </section>
 """
-    )
+        )
+    with match:
+        st.html(
+            """
+<a class="tournament-card fade-in" href="./Match_Center">
+  <div class="tournament-head">
+    <span><b class="archive-badge">ARCHIVE</b>2026 FIFA WORLD CUP</span>
+    <span>官方资料入口</span>
+  </div>
+  <div class="tournament-state">
+    <span>赛事状态</span>
+    <strong>已完结</strong>
+    <p>2026 年 6 月 11 日 — 7 月 19 日</p>
+  </div>
+  <div class="tournament-actions"><span>赛程 · 赛果 · 官方报道 · 历史资料</span><span>进入赛事档案　›</span></div>
+</a>
+"""
+        )
 else:
-    st.markdown("## 世界杯新闻助手")
+    st.caption("2026 WORLD CUP AI NEWSROOM")
+    st.markdown("## 新闻编辑工作台")
 
 st.segmented_control(
     "工作模式",
@@ -882,93 +936,10 @@ if not has_conversation:
 else:
     suggested = None
 
-if st.session_state.app_mode == "新闻创作":
-    with st.expander("高级设置", icon=":material/tune:"):
-        row = st.container(horizontal=True)
-        row.selectbox(
-            "报道模式", REPORTING_MODES, key="reporting_mode", persist_state="session"
-        )
-        row.selectbox(
-            "新闻类型", NEWS_TYPES, key="news_type", persist_state="session"
-        )
-        row.selectbox(
-            "写作风格", WRITING_STYLES, key="writing_style", persist_state="session"
-        )
-        st.text_input("目标受众", key="audience", persist_state="session")
-        image_row = st.container(horizontal=True)
-        image_row.selectbox(
-            "图片风格", IMAGE_STYLES, key="image_style", persist_state="session"
-        )
-        image_row.segmented_control(
-            "图片数量", [1, 2], key="image_count", persist_state="session"
-        )
-        st.toggle(
-            "将上传的真实图片加入成稿",
-            key="include_uploaded_image",
-            persist_state="session",
-            help="开启后，上传图片会保存到本次新闻并可在详情页调整图注和位置。",
-        )
-        if settings.image_provider == "ttapi":
-            st.segmented_control(
-                "上传图片用途",
-                IMAGE_USAGES,
-                key="image_usage",
-                selection_mode="single",
-                width="stretch",
-                persist_state="session",
-            )
-            if uses_source_image(st.session_state.image_usage):
-                source_row = st.container(horizontal=True)
-                source_row.text_input(
-                    "真实图片图注",
-                    key="source_image_caption",
-                    placeholder="例如：球员在赛后向看台致意",
-                    persist_state="session",
-                )
-                source_row.text_input(
-                    "图片来源/摄影者",
-                    key="source_image_credit",
-                    placeholder="例如：FIFA / 摄影者姓名",
-                    persist_state="session",
-                )
-                st.text_input(
-                    "真实图片原始链接（可选）",
-                    key="source_image_url",
-                    placeholder="https://example.com/original-photo",
-                    persist_state="session",
-                )
-                st.selectbox(
-                    "真实图片插入位置",
-                    options=list(IMAGE_PLACEMENTS.values()),
-                    format_func=lambda value: PLACEMENT_LABELS[value],
-                    key="source_image_placement",
-                    persist_state="session",
-                )
-            if uses_midjourney_reference(st.session_state.image_usage):
-                st.text_input(
-                    "MidJourney 参考图 URL",
-                    key="midjourney_reference_url",
-                    placeholder="https://example.com/reference.jpg",
-                    persist_state="session",
-                )
-                st.slider(
-                    "参考图权重",
-                    min_value=0.5,
-                    max_value=2.0,
-                    step=0.1,
-                    key="midjourney_image_weight",
-                    persist_state="session",
-                )
-        else:
-            st.session_state.image_usage = IMAGE_USAGES[0]
-        st.text_area(
-            "补充事实材料",
-            key="extra_facts",
-            height=120,
-            max_chars=8000,
-            placeholder="可选：粘贴比赛数据、采访记录和来源网址。",
-            persist_state="session",
-        )
+home_composer_slot = st.empty() if not has_conversation else None
+
+if not has_conversation:
+    render_home_dashboard(history)
 
 @st.fragment(run_every=0.7 if has_running_job() else None)
 def render_conversation() -> None:
@@ -979,23 +950,114 @@ def render_conversation() -> None:
         st.rerun()
 
 
-render_conversation()
-
 current_mode_running = has_running_job(st.session_state.app_mode)
-if current_mode_running:
-    st.caption(f"「{st.session_state.app_mode}」任务正在后台运行，可以切换到其他功能。")
 
-submission = st.chat_input(
-    "输入你的问题" if st.session_state.app_mode == "对话" else "描述你要创作的新闻",
-    accept_file=True,
-    file_type=["jpg", "jpeg", "png", "webp"],
-    accept_audio=True,
-    audio_sample_rate=16000,
-    max_chars=4000,
-    max_upload_size=10,
-    submit_mode="disable",
-    disabled=current_mode_running,
-)
+if home_composer_slot is not None:
+    chat_input_parent = home_composer_slot.container()
+else:
+    chat_input_parent = nullcontext()
+with chat_input_parent:
+    render_conversation()
+    if current_mode_running:
+        st.caption(f"「{st.session_state.app_mode}」任务正在后台运行，可以切换到其他功能。")
+    if st.session_state.app_mode == "新闻创作":
+        with st.expander("高级设置", icon=":material/tune:"):
+            row = st.container(horizontal=True)
+            row.selectbox(
+                "报道模式", REPORTING_MODES, key="reporting_mode", persist_state="session"
+            )
+            row.selectbox(
+                "新闻类型", NEWS_TYPES, key="news_type", persist_state="session"
+            )
+            row.selectbox(
+                "写作风格", WRITING_STYLES, key="writing_style", persist_state="session"
+            )
+            st.text_input("目标受众", key="audience", persist_state="session")
+            image_row = st.container(horizontal=True)
+            image_row.selectbox(
+                "图片风格", IMAGE_STYLES, key="image_style", persist_state="session"
+            )
+            image_row.segmented_control(
+                "图片数量", [1, 2], key="image_count", persist_state="session"
+            )
+            st.toggle(
+                "将上传的真实图片加入成稿",
+                key="include_uploaded_image",
+                persist_state="session",
+                help="开启后，上传图片会保存到本次新闻并可在详情页调整图注和位置。",
+            )
+            if settings.image_provider == "ttapi":
+                st.segmented_control(
+                    "上传图片用途",
+                    IMAGE_USAGES,
+                    key="image_usage",
+                    selection_mode="single",
+                    width="stretch",
+                    persist_state="session",
+                )
+                if uses_source_image(st.session_state.image_usage):
+                    source_row = st.container(horizontal=True)
+                    source_row.text_input(
+                        "真实图片图注",
+                        key="source_image_caption",
+                        placeholder="例如：球员在赛后向看台致意",
+                        persist_state="session",
+                    )
+                    source_row.text_input(
+                        "图片来源/摄影者",
+                        key="source_image_credit",
+                        placeholder="例如：FIFA / 摄影者姓名",
+                        persist_state="session",
+                    )
+                    st.text_input(
+                        "真实图片原始链接（可选）",
+                        key="source_image_url",
+                        placeholder="https://example.com/original-photo",
+                        persist_state="session",
+                    )
+                    st.selectbox(
+                        "真实图片插入位置",
+                        options=list(IMAGE_PLACEMENTS.values()),
+                        format_func=lambda value: PLACEMENT_LABELS[value],
+                        key="source_image_placement",
+                        persist_state="session",
+                    )
+                if uses_midjourney_reference(st.session_state.image_usage):
+                    st.text_input(
+                        "MidJourney 参考图 URL",
+                        key="midjourney_reference_url",
+                        placeholder="https://example.com/reference.jpg",
+                        persist_state="session",
+                    )
+                    st.slider(
+                        "参考图权重",
+                        min_value=0.5,
+                        max_value=2.0,
+                        step=0.1,
+                        key="midjourney_image_weight",
+                        persist_state="session",
+                    )
+            else:
+                st.session_state.image_usage = IMAGE_USAGES[0]
+            st.text_area(
+                "补充事实材料",
+                key="extra_facts",
+                height=120,
+                max_chars=8000,
+                placeholder="可选：粘贴比赛数据、采访记录和来源网址。",
+                persist_state="session",
+            )
+    submission = st.chat_input(
+        "输入你的问题" if st.session_state.app_mode == "对话" else "描述你要创作的新闻",
+        accept_file=True,
+        file_type=["jpg", "jpeg", "png", "webp"],
+        accept_audio=True,
+        audio_sample_rate=16000,
+        max_chars=4000,
+        max_upload_size=10,
+        submit_mode="disable",
+        disabled=current_mode_running,
+    )
 
 if suggested and not submission:
     incoming_text = suggestions[suggested]

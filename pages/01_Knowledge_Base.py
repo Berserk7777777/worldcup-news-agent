@@ -4,6 +4,7 @@ from background_jobs import get_job, start_knowledge_update_job
 from config import load_settings
 from knowledge_base import KnowledgeBase
 from rag_sources import SOURCES
+from ui import apply_newsroom_style, render_page_sidebar, render_topbar
 
 
 st.set_page_config(
@@ -12,10 +13,10 @@ st.set_page_config(
     layout="wide",
 )
 
-st.html(
-    '<a href="/" style="color:#0f6b4f;font-weight:700;text-decoration:none">'
-    "← 返回对话</a>"
-)
+apply_newsroom_style()
+render_page_sidebar()
+render_topbar("知识库")
+st.caption("TRUSTED SOURCE LIBRARY")
 st.title("世界杯知识库")
 st.caption(
     "手动抓取可信白名单，清洗、去重、切分并调用硅基流动 Embedding API。"

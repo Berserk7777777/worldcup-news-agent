@@ -464,6 +464,22 @@ class KnowledgeBase:
             "level_b": levels.get("B", 0),
         }
 
+    def latest_documents(self, before: str = "", limit: int = 6) -> list[dict]:
+        where = "WHERE published_at <= ?" if before else ""
+        params = (before, limit) if before else (limit,)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT source_name, source_level, url, title, published_at, summary_zh
+                FROM documents
+                {where}
+                ORDER BY COALESCE(published_at, fetched_at) DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def existing_hash(self, url: str) -> str:
         with self.connect() as connection:
             row = connection.execute(
@@ -783,6 +799,51 @@ class KnowledgeUpdater:
             entries=entries,
         )
         return list(entries)
+
+    def latest_official_headlines(
+        self, before: str = "", limit: int = 6
+    ) -> list[dict]:
+        source = next(item for item in SOURCES if item.key == "fifa_world_cup")
+        entries = sorted(
+            self._recent_fifa_entries(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        candidates = []
+        for url, last_modified in entries:
+            if "/canadamexicousa2026/" not in url or "/articles/" not in url:
+                continue
+            published = last_modified[:10]
+            if before and published and published > before:
+                continue
+            candidates.append((url, published))
+            if len(candidates) >= limit * 3:
+                break
+
+        headlines = []
+        for url, sitemap_date in candidates:
+            try:
+                article_url, article_html = self._fetch(
+                    f"{url}?_escaped_fragment_="
+                )
+                article, _ = _parse_page(source, article_url, article_html)
+            except Exception:
+                continue
+            if not article.title:
+                continue
+            headlines.append(
+                {
+                    "source_name": source.name,
+                    "source_level": source.level,
+                    "url": article.url,
+                    "title": article.title,
+                    "published_at": article.published_at or sitemap_date,
+                    "summary_zh": "",
+                }
+            )
+            if len(headlines) >= limit:
+                break
+        return headlines
 
     def search_official(self, query: str, max_articles: int = 4) -> dict:
         stats = {

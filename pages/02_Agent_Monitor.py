@@ -26,15 +26,19 @@ from monitoring.visualizations import (
     create_token_history_line,
     create_top_k_relevance_bar,
 )
+from ui import apply_newsroom_style, render_brand, render_sidebar_user, render_topbar
 
 
 st.set_page_config(
     page_title="智能体运行监控中心",
-    page_icon="📊",
+    page_icon=":material/monitoring:",
     layout="wide",
 )
 
-st.title("📊 智能体运行监控中心")
+apply_newsroom_style()
+render_topbar("运行监控")
+st.caption("AGENT OPERATIONS CENTER")
+st.title("智能体运行监控中心")
 st.caption("查看世界杯新闻智能体的运行轨迹、模型调用、Token 消耗、RAG 检索和多 Agent 协作过程。")
 
 for key, default in {
@@ -85,6 +89,28 @@ def _json_bytes(payload) -> bytes:
 
 
 with st.sidebar:
+    render_brand()
+    st.page_link("app.py", label="首页 / AI 编辑台", icon=":material/home:")
+    st.page_link(
+        "pages/04_Match_Center.py",
+        label="赛事档案",
+        icon=":material/sports_soccer:",
+    )
+    st.page_link(
+        "pages/05_History.py",
+        label="历史记录",
+        icon=":material/history:",
+    )
+    st.page_link(
+        "pages/01_Knowledge_Base.py",
+        label="知识库",
+        icon=":material/database:",
+    )
+    st.page_link(
+        "pages/06_Settings.py",
+        label="设置",
+        icon=":material/settings:",
+    )
     st.subheader("筛选条件")
     date_range = st.date_input(
         "日期范围",
@@ -104,6 +130,7 @@ with st.sidebar:
     if st.button("刷新数据", width="stretch"):
         st.session_state["monitor_run_list"] = []
         st.rerun()
+    render_sidebar_user()
 
 if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
     start_date, end_date = date_range

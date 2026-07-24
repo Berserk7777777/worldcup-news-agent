@@ -109,6 +109,28 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertIn("FIFA", context)
         self.assertIn("https://fifa.example/report", context)
 
+    def test_latest_documents_respects_archive_date(self):
+        for published_at in ["2026-07-18", "2026-07-20"]:
+            article = Article(
+                self.source_a,
+                f"https://www.fifa.com/article/{published_at}",
+                f"Official report {published_at}",
+                published_at,
+                "en",
+                "FIFA World Cup official report.",
+            )
+            self.database.save_article(
+                article,
+                "世界杯官方报道。",
+                [article.content],
+                [[1.0, 0.0]],
+                "test",
+            )
+
+        results = self.database.latest_documents(before="2026-07-19")
+
+        self.assertEqual([item["published_at"] for item in results], ["2026-07-18"])
+
     def test_year_in_url_does_not_make_unrelated_article_relevant(self):
         self.assertFalse(
             _is_relevant(
