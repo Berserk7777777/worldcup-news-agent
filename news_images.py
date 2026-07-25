@@ -57,12 +57,15 @@ def normalize_image_record(image: Any, index: int = 0) -> dict:
     return record
 
 
-def save_source_image(run_dir: Path, image: dict, user_input: Any) -> dict:
+def save_source_image(
+    run_dir: Path, image: dict, user_input: Any, index: int = 0
+) -> dict:
     image_bytes = image.get("bytes") or b""
     if not image_bytes:
         raise ValueError("上传的真实图片为空")
 
-    output_path = run_dir / "source_image_1.png"
+    image_number = index + 1
+    output_path = run_dir / f"source_image_{image_number}.png"
     with Image.open(BytesIO(image_bytes)) as source:
         normalized = ImageOps.exif_transpose(source).convert("RGB")
         normalized.save(output_path, format="PNG", optimize=True)
@@ -75,10 +78,10 @@ def save_source_image(run_dir: Path, image: dict, user_input: Any) -> dict:
         placement = "after_lead"
 
     return {
-        "image_id": "source_1",
+        "image_id": f"source_{image_number}",
         "kind": "source",
-        "name": image.get("name") or "用户提供的真实图片",
-        "caption": caption or "用户提供的新闻资料图片",
+        "name": image.get("name") or f"用户提供的真实图片 {image_number}",
+        "caption": caption or f"用户提供的新闻资料图片 {image_number}",
         "credit": credit or "用户提供，版权信息待补充",
         "source_url": source_url,
         "local_path": str(output_path),

@@ -70,9 +70,9 @@ def get_job(job_id: str) -> dict | None:
         return copy.copy(job) | {"events": list(job["events"])} if job else None
 
 
-def _prepare_media(client, text, audio, image, event_callback):
+def _prepare_media(client, text, audio, images, event_callback):
     media_text = text
-    image_analysis = ""
+    image_analyses = []
     if audio:
         event_callback("语音识别", "正在识别语音", "running")
         transcript = client.transcribe_audio(
@@ -80,16 +80,19 @@ def _prepare_media(client, text, audio, image, event_callback):
         )
         media_text = f"{media_text}\n\n语音补充：{transcript}" if media_text else transcript
         event_callback("语音识别", "语音识别完成", "completed")
-    if image:
-        event_callback("图片理解", "正在读取参考图片", "running")
-        image_analysis = client.analyze_image(
-            image["bytes"], image["type"], media_text
+    for index, image in enumerate(images or [], 1):
+        event_callback("图片理解", f"正在读取参考图片 {index}/{len(images)}", "running")
+        analysis = client.analyze_image(image["bytes"], image["type"], media_text)
+        image_analyses.append(
+            f"图片 {index}：{analysis}" if len(images) > 1 else analysis
         )
-        event_callback("图片理解", "参考图片分析完成", "completed")
-    return media_text, image_analysis
+        event_callback("图片理解", f"参考图片 {index}/{len(images)} 分析完成", "completed")
+    return media_text, "\n\n".join(image_analyses)
 
 
-def start_chat_job(settings, history: list[dict], audio=None, image=None) -> str:
+def start_chat_job(
+    settings, history: list[dict], audio=None, image=None, images=None
+) -> str:
     job_id = _create_job("chat")
 
     def run() -> None:
@@ -100,7 +103,7 @@ def start_chat_job(settings, history: list[dict], audio=None, image=None) -> str
                 client,
                 current_text,
                 audio,
-                image,
+                images if images is not None else ([image] if image else []),
                 lambda stage, message, state: _append_event(
                     job_id, stage, message, state
                 ),
@@ -372,17 +375,20 @@ def start_knowledge_update_job(settings) -> str:
     return job_id
 
 
-def start_news_job(settings, user_input, audio=None, image=None) -> str:
+def start_news_job(
+    settings, user_input, audio=None, image=None, images=None
+) -> str:
     job_id = _create_job("news")
 
     def run() -> None:
         try:
             client = SiliconFlowClient(settings)
+            uploaded_images = images if images is not None else ([image] if image else [])
             text, image_analysis = _prepare_media(
                 client,
                 user_input.topic,
                 audio,
-                image,
+                uploaded_images,
                 lambda stage, message, state: _append_event(
                     job_id, stage, message, state
                 ),
@@ -405,17 +411,20 @@ def start_news_job(settings, user_input, audio=None, image=None) -> str:
                 ),
             )
             if (
-                image
+                uploaded_images
                 and user_input.include_uploaded_image
                 and result.get("run_dir")
             ):
                 run_dir = Path(result["run_dir"])
-                source_record = save_source_image(run_dir, image, user_input)
+                source_records = [
+                    save_source_image(run_dir, uploaded_image, user_input, index)
+                    for index, uploaded_image in enumerate(uploaded_images)
+                ]
                 generated_records = [
                     normalize_image_record(item, index)
                     for index, item in enumerate(result.get("images", []))
                 ]
-                result["images"] = [source_record, *generated_records]
+                result["images"] = [*source_records, *generated_records]
                 persist_image_records(run_dir, result["images"])
             result["user_input"] = user_input
             _update(job_id, status="completed", result=result)

@@ -729,8 +729,15 @@ def render_message(message: dict) -> bool:
             message.pop("job_id", None)
 
     with st.chat_message(message["role"]):
-        if message.get("image"):
-            st.image(message["image"]["bytes"], caption=message["image"]["name"], width=260)
+        image_records = message.get("images") or (
+            [message["image"]] if message.get("image") else []
+        )
+        if image_records:
+            st.image(
+                [item["bytes"] for item in image_records],
+                caption=[item["name"] for item in image_records],
+                width=260,
+            )
         if message.get("content"):
             st.markdown(message["content"])
         if message.get("image_result"):
@@ -1073,7 +1080,7 @@ with chat_input_parent:
             )
     submission = st.chat_input(
         "输入你的问题" if st.session_state.app_mode == "对话" else "描述你要创作的新闻",
-        accept_file=True,
+        accept_file="multiple",
         file_type=["jpg", "jpeg", "png", "webp"],
         accept_audio=True,
         audio_sample_rate=16000,
@@ -1085,27 +1092,27 @@ with chat_input_parent:
 
 if suggested and not submission:
     incoming_text = suggestions[suggested]
-    uploaded_image = None
+    uploaded_images = []
     audio = None
 elif submission:
     incoming_text = submission.text.strip()
-    uploaded_image = submission.files[0] if submission.files else None
+    uploaded_images = list(submission.files)
     audio = submission.audio
 else:
     incoming_text = ""
-    uploaded_image = None
+    uploaded_images = []
     audio = None
 
 if suggested or submission:
-    image_record = None
-    image_payload = None
-    if uploaded_image:
+    image_records = []
+    image_payloads = []
+    for uploaded_image in uploaded_images:
         image_bytes = uploaded_image.getvalue()
         image_record = {"name": uploaded_image.name, "bytes": image_bytes}
-        image_payload = {
-            **image_record,
-            "type": uploaded_image.type or "image/jpeg",
-        }
+        image_records.append(image_record)
+        image_payloads.append(
+            {**image_record, "type": uploaded_image.type or "image/jpeg"}
+        )
     audio_payload = (
         {
             "bytes": audio.getvalue(),
@@ -1125,15 +1132,15 @@ if suggested or submission:
         )
     else:
         display_text = (
-            "请描述这张参考图片。"
+            "请描述这些参考图片。"
             if st.session_state.app_mode == "对话"
-            else "请根据这张参考图片创作一篇2026世界杯相关新闻。"
+            else "请根据这些参考图片创作一篇2026世界杯相关新闻。"
         )
     st.session_state.messages.append(
         {
             "role": "user",
             "content": display_text,
-            "image": image_record,
+            "images": image_records,
             "mode": st.session_state.app_mode,
         }
     )
@@ -1199,7 +1206,7 @@ if suggested or submission:
             settings,
             chat_history,
             audio=audio_payload,
-            image=image_payload,
+            images=image_payloads,
         )
     else:
         if not st.session_state.news_task_active:
@@ -1221,7 +1228,7 @@ if suggested or submission:
             settings,
             user_input,
             audio=audio_payload,
-            image=image_payload,
+            images=image_payloads,
         )
 
     st.session_state.messages.append(

@@ -16,6 +16,7 @@ from background_jobs import (
     start_midjourney_action_job,
     start_news_job,
 )
+from news_images import SOURCE_IMAGE_USAGE
 from schemas import GeneratedImage, MidJourneyJob, UserInput
 
 
@@ -207,6 +208,41 @@ class BackgroundJobTests(unittest.TestCase):
             self.assertIn("上传图片分析结果", user_input.factual_material)
             self.assertEqual(job["result"]["images"][0]["kind"], "source")
             self.assertTrue((run_dir / "source_image_1.png").is_file())
+
+    @patch("background_jobs.SiliconFlowClient.analyze_image")
+    @patch("background_jobs.run_news_workflow")
+    def test_multiple_uploaded_images_are_analyzed_and_saved(
+        self, workflow, analyze_image
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "result.json").write_text(
+                json.dumps({"images": []}, ensure_ascii=False), encoding="utf-8"
+            )
+            workflow.return_value = {"missing_facts": [], "run_dir": str(run_dir), "images": []}
+            analyze_image.side_effect = ["first image", "second image"]
+            images = []
+            for index, color in enumerate(["#0f6b4f", "#d8e862"], 1):
+                buffer = BytesIO()
+                Image.new("RGB", (320, 180), color).save(buffer, format="JPEG")
+                images.append(
+                    {"bytes": buffer.getvalue(), "name": f"image_{index}.jpg", "type": "image/jpeg"}
+                )
+            user_input = UserInput(
+                "report", "test", "other", "audience", "objective", "facts", "photo", 1,
+                image_usage=SOURCE_IMAGE_USAGE,
+            )
+
+            job = wait_for(start_news_job(self.settings, user_input, images=images))
+
+            self.assertEqual(job["status"], "completed")
+            self.assertEqual(analyze_image.call_count, 2)
+            self.assertTrue((run_dir / "source_image_1.png").is_file())
+            self.assertTrue((run_dir / "source_image_2.png").is_file())
+            self.assertEqual(
+                [item["image_id"] for item in job["result"]["images"]],
+                ["source_1", "source_2"],
+            )
 
     @patch("background_jobs.persist_midjourney_state")
     @patch("background_jobs.run_midjourney_action")
