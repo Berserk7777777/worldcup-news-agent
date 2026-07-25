@@ -611,22 +611,14 @@ def render_news_video(result: dict, run_dir: Path) -> None:
                 visual_options,
                 default=visual_options[0],
                 key=f"video-visual-{run_dir.name}",
-                help="Veo 每段生成 8 秒比赛演绎镜头，并自动与播报音频和字幕合成。",
+                help="先保留新闻图片轮播、配音和字幕，再在末尾追加一个 8 秒无声 Veo 情景片段。",
             )
             veo_model = "veo-3.1-fast"
-            veo_clip_count = 1
             if visual_mode == "Veo 比赛演绎":
-                veo_row = st.container(horizontal=True)
-                veo_model = veo_row.selectbox(
+                veo_model = st.selectbox(
                     "Veo 模型",
                     ["veo-3.1-fast", "veo-3.1-quality", "veo-3.1-lite"],
                     key=f"veo-model-{run_dir.name}",
-                )
-                veo_clip_count = veo_row.segmented_control(
-                    "比赛镜头数",
-                    [1, 2, 3],
-                    default=1,
-                    key=f"veo-clips-{run_dir.name}",
                 )
             submitted = st.form_submit_button(
                 "生成视频",
@@ -644,7 +636,6 @@ def render_news_video(result: dict, run_dir: Path) -> None:
                 float(speed),
                 "veo" if visual_mode == "Veo 比赛演绎" else "newsroom",
                 veo_model,
-                int(veo_clip_count or 1),
             )
             result.pop("_video_error", None)
             st.rerun()

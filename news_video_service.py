@@ -330,39 +330,53 @@ def compose_video(
         raise NewsVideoError("FFmpeg 没有生成有效的视频文件")
 
 
+def compose_frame_carousel(
+    work_dir: Path,
+    entries: list[dict],
+    frame_paths: list[Path],
+    output_path: Path,
+) -> None:
+    concat_path = work_dir / "frames.txt"
+    lines: list[str] = []
+    for entry, frame_path in zip(entries, frame_paths):
+        lines.append(f"file '{frame_path.name}'")
+        lines.append(f"duration {entry['duration']:.6f}")
+    lines.append(f"file '{frame_paths[-1].name}'")
+    concat_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _run_ffmpeg(
+        [
+            "-y", "-f", "concat", "-safe", "0", "-i", concat_path.name,
+            "-an", "-c:v", "libx264", "-preset", "medium", "-r", "25",
+            "-pix_fmt", "yuv420p", output_path.name,
+        ],
+        work_dir,
+    )
+
+
 def compose_veo_video(
     work_dir: Path,
-    clip_paths: list[Path],
+    entries: list[dict],
+    frame_paths: list[Path],
+    veo_path: Path,
     audio_path: Path,
-    subtitle_path: Path,
     output_path: Path,
     size: tuple[int, int],
-    duration: float,
 ) -> None:
-    if not clip_paths:
-        raise NewsVideoError("没有可用于合成的 Veo 视频片段")
-    concat_path = work_dir / "veo_clips.txt"
-    concat_path.write_text(
-        "\n".join(f"file '{path.name}'" for path in clip_paths) + "\n",
-        encoding="utf-8",
-    )
-    broll_path = work_dir / "veo_broll.mp4"
+    carousel_path = work_dir / "news_carousel.mp4"
+    compose_frame_carousel(work_dir, entries, frame_paths, carousel_path)
+    scene_path = work_dir / "veo_scene.mp4"
     width, height = size
     _run_ffmpeg(
         [
             "-y",
-            "-stream_loop",
-            "-1",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
             "-i",
-            concat_path.name,
+            veo_path.name,
             "-t",
-            f"{duration:.3f}",
+            "8",
             "-vf",
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},fps=25",
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},fps=25,"
+            "drawtext=text='AI GENERATED MATCH REENACTMENT':x=20:y=20:fontsize=18:"
+            "fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=8",
             "-an",
             "-c:v",
             "libx264",
@@ -370,29 +384,31 @@ def compose_veo_video(
             "medium",
             "-pix_fmt",
             "yuv420p",
-            broll_path.name,
+            scene_path.name,
         ],
         work_dir,
-    )
-    subtitle_filter = (
-        "subtitles=subtitles.srt:charenc=UTF-8:"
-        "force_style='FontName=Microsoft YaHei,FontSize=24,Alignment=2,MarginV=30,Outline=2',"
-        "drawtext=text='AI GENERATED MATCH REENACTMENT':x=20:y=20:fontsize=18:"
-        "fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=8"
     )
     _run_ffmpeg(
         [
             "-y",
             "-i",
-            broll_path.name,
+            carousel_path.name,
+            "-i",
+            scene_path.name,
             "-i",
             audio_path.name,
-            "-vf",
-            subtitle_filter,
+            "-f",
+            "lavfi",
+            "-t",
+            "8",
+            "-i",
+            "anullsrc=r=24000:cl=mono",
+            "-filter_complex",
+            "[0:v][1:v]concat=n=2:v=1:a=0[v];[2:a][3:a]concat=n=2:v=0:a=1[a]",
             "-map",
-            "0:v:0",
+            "[v]",
             "-map",
-            "1:a:0",
+            "[a]",
             "-c:v",
             "libx264",
             "-preset",
@@ -403,7 +419,6 @@ def compose_veo_video(
             "aac",
             "-b:a",
             "160k",
-            "-shortest",
             output_path.name,
         ],
         work_dir,
@@ -412,43 +427,36 @@ def compose_veo_video(
         raise NewsVideoError("FFmpeg 没有生成有效的 Veo 新闻视频")
 
 
-def build_veo_prompts(title: str, script: str, clip_count: int) -> list[str]:
+def build_veo_prompt(title: str, script: str) -> str:
     segments = split_broadcast_script(script, max_chars=90)
-    selected = [segments[min(index * len(segments) // clip_count, len(segments) - 1)] for index in range(clip_count)]
-    prompts = []
-    for index, segment in enumerate(selected, 1):
-        prompts.append(
-            "Cinematic football match reenactment for a news package, "
-            "dynamic broadcast camera, natural stadium lighting, realistic ball motion, "
-            "diverse generic football players, no logos, no identifiable real athletes, "
-            "no text, no scoreboard, no watermark. "
-            f"Scene {index} inspired by this news context: {title}. {segment}"
-        )
-    return prompts
+    segment = segments[-1]
+    return (
+        "Cinematic football match reenactment for a news package, "
+        "dynamic broadcast camera, natural stadium lighting, realistic ball motion, "
+        "diverse generic football players, no logos, no identifiable real athletes, "
+        "no text, no scoreboard, no watermark. "
+        f"Final scene inspired by this news context: {title}. {segment}"
+    )
 
 
-def generate_veo_clips(
+def generate_veo_scene(
     settings,
     work_dir: Path,
     title: str,
     script: str,
     aspect_ratio: str,
     model: str,
-    clip_count: int,
     progress_callback: ProgressCallback,
-) -> list[Path]:
+) -> Path:
     client = TTAPIVeoClient(settings)
-    clips: list[Path] = []
-    for index, prompt in enumerate(build_veo_prompts(title, script, clip_count), 1):
-        _notify(progress_callback, f"正在提交 Veo 比赛镜头 {index}/{clip_count}", "running")
-        job_id = client.create_video(prompt, aspect_ratio, model)
-        _notify(progress_callback, f"Veo 镜头 {index}/{clip_count} 正在生成", "running")
-        video_url, _ = client.poll_until_ready(job_id)
-        clip_path = work_dir / f"veo_clip_{index:02}.mp4"
-        client.download_video(video_url, clip_path)
-        clips.append(clip_path)
-        _notify(progress_callback, f"Veo 镜头 {index}/{clip_count} 已完成", "completed")
-    return clips
+    _notify(progress_callback, "正在提交 Veo 比赛情景片段", "running")
+    job_id = client.create_video(build_veo_prompt(title, script), aspect_ratio, model)
+    _notify(progress_callback, "Veo 情景片段正在生成", "running")
+    video_url, _ = client.poll_until_ready(job_id)
+    scene_path = work_dir / "veo_scene_source.mp4"
+    client.download_video(video_url, scene_path)
+    _notify(progress_callback, "Veo 无声情景片段已完成", "completed")
+    return scene_path
 
 
 def create_news_video(
@@ -460,7 +468,6 @@ def create_news_video(
     speed: float = 1.0,
     visual_mode: str = "newsroom",
     veo_model: str = "veo-3.1-fast",
-    veo_clip_count: int = 1,
     progress_callback: ProgressCallback = None,
 ) -> dict:
     run_dir = Path(result.get("run_dir", ""))
@@ -491,39 +498,36 @@ def create_news_video(
 
     size = (1280, 720) if aspect_ratio == "16:9" else (720, 1280)
     image_records = publication_images(result, run_dir)
+    frame_paths: list[Path] = []
+    _notify(progress_callback, "正在编排新闻图片轮播和字幕", "running")
+    for index, entry in enumerate(entries):
+        frame_path = work_dir / f"frame_{index:04d}.png"
+        image_record = image_records[index % len(image_records)] if image_records else None
+        render_news_frame(frame_path, size, title, entry["text"], image_record, None)
+        frame_paths.append(frame_path)
     output_path = work_dir / "news_video.mp4"
-    veo_clips: list[Path] = []
+    veo_scene: Path | None = None
     veo_error = ""
     if visual_mode == "veo":
         try:
-            veo_clips = generate_veo_clips(
+            veo_scene = generate_veo_scene(
                 settings,
                 work_dir,
                 title,
                 script,
                 aspect_ratio,
                 veo_model,
-                max(1, min(3, int(veo_clip_count))),
                 progress_callback,
             )
-            _notify(progress_callback, "正在合成 Veo 比赛镜头、配音和字幕", "running")
+            _notify(progress_callback, "正在追加 Veo 无声情景片段", "running")
             compose_veo_video(
-                work_dir, veo_clips, wav_path, subtitle_path, output_path, size, duration
+                work_dir, entries, frame_paths, veo_scene, wav_path, output_path, size
             )
         except (TTAPIVeoError, TimeoutError, OSError, NewsVideoError) as error:
             veo_error = str(error)
             _notify(progress_callback, "Veo 镜头不可用，已切换为新闻版式", "failed")
 
     if not output_path.is_file():
-        frame_paths: list[Path] = []
-        _notify(progress_callback, "正在编排新闻画面和字幕", "running")
-        for index, entry in enumerate(entries):
-            frame_path = work_dir / f"frame_{index:04d}.png"
-            image_record = image_records[index % len(image_records)] if image_records else None
-            render_news_frame(
-                frame_path, size, title, entry["text"], image_record, None
-            )
-            frame_paths.append(frame_path)
         compose_video(work_dir, entries, frame_paths, wav_path, output_path)
     _notify(progress_callback, "AI 新闻视频已生成", "completed")
     return {
@@ -537,9 +541,9 @@ def create_news_video(
         "audio_path": str(speech_path),
         "subtitle_path": str(subtitle_path),
         "script_path": str(script_path),
-        "visual_mode": "veo" if veo_clips and not veo_error else "newsroom",
-        "veo_model": veo_model if veo_clips else "",
-        "veo_clip_paths": [str(path) for path in veo_clips],
+        "visual_mode": "veo" if veo_scene and not veo_error else "newsroom",
+        "veo_model": veo_model if veo_scene else "",
+        "veo_scene_path": str(veo_scene) if veo_scene else "",
         "veo_error": veo_error,
         "image_count": len(image_records),
     }

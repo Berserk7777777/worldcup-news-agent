@@ -112,9 +112,17 @@ class NewsVideoTests(unittest.TestCase):
             subtitle_path = root / "subtitles.srt"
             write_srt(subtitle_entries("Veo match reenactment", 1.0), subtitle_path)
             output_path = root / "veo_video.mp4"
+            frame_path = root / "frame.png"
+            Image.new("RGB", (320, 180), "#d8e862").save(frame_path)
 
             compose_veo_video(
-                root, [clip_path], audio_path, subtitle_path, output_path, (320, 180), 1.0
+                root,
+                [{"duration": 1.0}],
+                [frame_path],
+                clip_path,
+                audio_path,
+                output_path,
+                (320, 180),
             )
 
             self.assertGreater(output_path.stat().st_size, 1000)
