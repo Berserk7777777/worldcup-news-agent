@@ -48,7 +48,7 @@ apply_newsroom_style()
 APP_MODES = ["对话", "新闻创作"]
 REPORTING_MODES = ["真实报道", "AI模拟报道"]
 NEWS_TYPES = ["自动判断", "赛事战报", "球员人物特写", "赛场精彩瞬间", "赛况总结", "世界杯与城市经济", "其他"]
-WRITING_STYLES = ["自动判断", "正式体育新闻", "新媒体新闻报道", "人物故事", "城市观察", "简洁客观报道"]
+WRITING_STYLES = ["第一人称叙事", "正式体育新闻", "新媒体新闻报道", "人物故事", "城市观察", "简洁客观报道"]
 IMAGE_STYLES = ["体育新闻摄影", "赛事宣传海报", "城市纪实摄影", "电影感体育画面", "简洁新媒体头图"]
 CHAT_SUGGESTIONS = {
     "你能做什么": "你能帮我做什么？",
@@ -69,7 +69,7 @@ for key, default in {
     "reporting_mode": "真实报道",
     "news_type": "自动判断",
     "audience": "普通球迷和关注世界杯的公众",
-    "writing_style": "自动判断",
+    "writing_style": "第一人称叙事",
     "image_style": "体育新闻摄影",
     "image_count": 1,
     "image_usage": "图片作为新闻资料",
@@ -604,6 +604,8 @@ def render_news_video(result: dict, run_dir: Path) -> None:
             visual_options = ["新闻版式"]
             if settings.veo_available:
                 visual_options.insert(0, "Veo 比赛演绎")
+            else:
+                st.info("配置 .env 中的 TTAPI_VIDEO_API_KEY 后，可使用 Veo 比赛演绎镜头。")
             visual_mode = st.segmented_control(
                 "画面来源",
                 visual_options,
@@ -786,7 +788,7 @@ def build_user_input() -> UserInput:
         topic=first_request[:200],
         news_type="其他" if news_type == "自动判断" else news_type,
         audience=st.session_state.audience.strip() or "普通球迷和关注世界杯的公众",
-        writing_style="简洁客观报道" if writing_style == "自动判断" else writing_style,
+        writing_style="第一人称叙事" if writing_style == "自动判断" else writing_style,
         factual_material="\n\n".join(item for item in facts if item),
         image_style=st.session_state.image_style,
         image_count=requested_image_count(request_text, st.session_state.image_count),

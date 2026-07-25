@@ -197,7 +197,16 @@ def build_writer_prompt(user_input: UserInput, planner_result: dict) -> tuple[st
 </EDITORIAL_PLAN>
 
 严格按照系统指定的JSON结构输出结果。"""
-    return _with_news_skill(WRITER_SYSTEM_PROMPT), user_prompt
+    system_prompt = _with_news_skill(WRITER_SYSTEM_PROMPT)
+    if user_input.writing_style == "第一人称叙事":
+        system_prompt += (
+            "\n\n<VOICE_REQUIREMENT>\n"
+            "使用自然、克制的第一人称叙事，避免僵硬的新闻套话。"
+            "第一人称仅表示叙述视角，不得虚构我亲眼目击、采访、到场或掌握用户材料以外的信息。"
+            "对未核实内容，保留用户提供的资料显示等归因表达。"
+            "</VOICE_REQUIREMENT>"
+        )
+    return system_prompt, user_prompt
 
 
 def build_reviewer_prompt(
@@ -222,4 +231,12 @@ def build_reviewer_prompt(
 </NEWS_DRAFT>
 
 请以原始事实材料为最高依据，完成审校并严格输出指定JSON。"""
-    return _with_news_skill(REVIEWER_SYSTEM_PROMPT), user_prompt
+    system_prompt = _with_news_skill(REVIEWER_SYSTEM_PROMPT)
+    if user_input.writing_style == "第一人称叙事":
+        system_prompt += (
+            "\n\n<VOICE_REQUIREMENT>\n"
+            "保留自然的第一人称口吻，但删除或改写任何伪装叙述者为亲历者、"
+            "现场记者或采访者的内容。不得弱化未核实信息的归因提示。"
+            "</VOICE_REQUIREMENT>"
+        )
+    return system_prompt, user_prompt

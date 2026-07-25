@@ -57,6 +57,17 @@ class RagPromptTests(unittest.TestCase):
             self.assertIn("不要把操作指令直接复制成标题", system_prompt)
             self.assertIn("AI生成示意图", system_prompt)
 
+    def test_first_person_style_has_safety_guidance(self):
+        self.user_input.writing_style = "第一人称叙事"
+        writer_system, _ = build_writer_prompt(self.user_input, {"can_proceed": True})
+        reviewer_system, _ = build_reviewer_prompt(
+            self.user_input, {"can_proceed": True}, {"full_article": "测试正文"}
+        )
+
+        self.assertIn("第一人称", writer_system)
+        self.assertIn("不得虚构", writer_system)
+        self.assertIn("第一人称", reviewer_system)
+
     def test_source_list_is_appended_deterministically(self):
         article = _append_source_list(
             "主办城市客流增长[1]。",

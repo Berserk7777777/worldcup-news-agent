@@ -101,8 +101,7 @@ def load_settings() -> Settings:
         ),
         ttapi_poll_interval_seconds=_env_float("TTAPI_POLL_INTERVAL_SECONDS", 5),
         ttapi_poll_timeout_seconds=_env_float("TTAPI_POLL_TIMEOUT_SECONDS", 300),
-        ttapi_video_api_key=os.getenv("TTAPI_VIDEO_API_KEY")
-        or os.getenv("TTAPI_IMAGE_API_KEY", ""),
+        ttapi_video_api_key=os.getenv("TTAPI_VIDEO_API_KEY", ""),
         ttapi_video_api_key_header=os.getenv(
             "TTAPI_VIDEO_API_KEY_HEADER", "TT-API-KEY"
         ),
